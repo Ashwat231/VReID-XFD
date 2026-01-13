@@ -4,6 +4,8 @@ from torch.utils.data import DataLoader
 from datasets.sampler import RandomIdentitySampler_Video
 from dataset_transformer import temporal_transforms as TT, spatial_transforms as ST
 from datasets.video_loader import VideoDataset, VideoDatasetInfer
+from torchvision.transforms import ColorJitter
+
 
 import model.clip
 
@@ -15,6 +17,9 @@ def make_dataloader(cfg):
     num_workers = cfg.DATALOADER.NUM_WORKERS
     spatial_transform_train_stage2 = ST.Compose([
         ST.Scale(cfg.INPUT.SIZE_TRAIN, interpolation=3),
+
+        ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
+
         ST.RandomHorizontalFlip(cfg.INPUT.PROB),
         ST.ToTensor(),
         ST.Normalize(cfg.INPUT.PIXEL_MEAN, cfg.INPUT.PIXEL_STD),
@@ -22,6 +27,9 @@ def make_dataloader(cfg):
 
     spatial_transform_train_stage1 = ST.Compose([
         ST.Scale(cfg.INPUT.SIZE_TRAIN, interpolation=3),
+        
+        ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
+
         ST.ToTensor(),
         ST.Normalize(cfg.INPUT.PIXEL_MEAN, cfg.INPUT.PIXEL_STD)])
 

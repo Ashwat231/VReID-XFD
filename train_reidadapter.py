@@ -75,6 +75,17 @@ if __name__ == '__main__':
     # TODO
     model = make_model(cfg, num_class=num_classes, camera_num=num_camera, view_num=0)
 
+# Unfreeze the final few layers of the network for tuning
+    for name, param in model.named_parameters():
+        lname = name.lower()
+        if("prompt" in lname or "adapter" in lname or "dat" in lname or "pbp" in lname or "qtw" in lname or "vcah" in lname):
+            param.requires_grad = True
+        elif("image_encoder" in lname and ("resblocks.10" in lname or "resblocks.11" in lname)):
+            param.requires_grad = True
+        elif("classifier" in lname or "bottleneck" in lname):
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
 
     loss_func, center_criterion = make_loss(cfg, num_classes=num_classes)
 

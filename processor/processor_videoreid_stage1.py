@@ -9,6 +9,7 @@ import collections
 from torch.nn import functional as F
 from loss.supcontrast import SupConLoss
 import einops
+from datetime import timedelta
 
 def do_train_stage1(cfg,
              model,
@@ -36,11 +37,11 @@ def do_train_stage1(cfg,
     
     # train
     import time
-    from datetime import timedelta
     all_start_time = time.monotonic()
     logger.info("model: {}".format(model))
     image_features = []
     labels = []
+
     with torch.no_grad():
         for n_iter, batch_data in enumerate(train_loader_stage1):
             # Support original (vids, pids, camid) and extended 8-tuple format
@@ -48,6 +49,7 @@ def do_train_stage1(cfg,
                 vids, pids, camid = batch_data
             else:
                 vids, pids, camid = batch_data[0], batch_data[1], batch_data[2]
+            
             print(n_iter)
             vids = vids.to(device)
             target = pids.to(device)
@@ -56,9 +58,9 @@ def do_train_stage1(cfg,
                 for i, img_feat in zip(target, image_feature):
                     labels.append(i)
                     image_features.append(img_feat.cpu())
+
         labels_list = torch.stack(labels, dim=0).cuda()  # N
         image_features_list = torch.stack(image_features, dim=0).cuda()
-
         batch = cfg.SOLVER.STAGE1.IMS_PER_BATCH
         num_image = labels_list.shape[0]
         i_ter = num_image // batch
@@ -70,6 +72,7 @@ def do_train_stage1(cfg,
         model.train()
 
         iter_list = torch.randperm(num_image).to(device)
+
         for i in range(i_ter):
             optimizer.zero_grad()
             if i != i_ter:
@@ -79,15 +82,14 @@ def do_train_stage1(cfg,
             
             target = labels_list[b_list]
             image_features = image_features_list[b_list]
+
             with amp.autocast(enabled=True):
                 text_features = model(label = target, get_text = True)
-            loss_i2t = xent(image_features, text_features, target, target)
-            loss_t2i = xent(text_features, image_features, target, target)
-
-            loss = loss_i2t + loss_t2i
+                loss_i2t = xent(image_features, text_features, target, target)
+                loss_t2i = xent(text_features, image_features, target, target)
+                loss = loss_i2t + loss_t2i
 
             scaler.scale(loss).backward()
-
             scaler.step(optimizer)
             scaler.update()
 
@@ -95,18 +97,27 @@ def do_train_stage1(cfg,
 
             torch.cuda.synchronize()
             if (i + 1) % log_period == 0:
-                logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.3f}, Base Lr: {:.2e}"
-                            .format(epoch, (i + 1), len(train_loader_stage1),
-                                    loss_meter.avg, scheduler._get_lr(epoch)[0]))
+                logger.info(
+                    "Epoch[{}] Iteration[{}/{}] Loss: {:.3f}, Base Lr: {:.2e}".format(
+                        epoch,
+                        (i + 1),
+                        len(train_loader_stage1),
+                        loss_meter.avg,
+                        scheduler.get_last_lr()[0]
+                    )
+                )
+        scheduler.step()
 
         if epoch % checkpoint_period == 0:
+            save_path = os.path.join(
+                cfg.OUTPUT_DIR,
+                f"{cfg.MODEL.NAME}_stage1_{epoch}.pth"
+            )
             if cfg.MODEL.DIST_TRAIN:
                 if dist.get_rank() == 0:
-                    torch.save(model.state_dict(),
-                               os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_stage1_{}.pth'.format(epoch)))
+                    torch.save(model.state_dict(), save_path)
             else:
-                torch.save(model.state_dict(),
-                           os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_stage1_{}.pth'.format(epoch)))
+                torch.save(model.state_dict(), save_path)
 
     all_end_time = time.monotonic()
     total_time = timedelta(seconds=all_end_time - all_start_time)
