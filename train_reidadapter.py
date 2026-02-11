@@ -4,6 +4,7 @@ from model.make_model_clipvideoreid_reidadapter_pbp import make_model
 from solver.make_optimizer_prompt import make_optimizer_1stage, make_optimizer_2stage_dat_and_prompt
 from solver.scheduler_factory import create_scheduler
 from solver.lr_scheduler import WarmupMultiStepLR
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from loss.make_loss_video import make_loss
 from processor.processor_videoreid_stage1 import do_train_stage1
 from processor.processor_videoreid_stage2 import do_train_stage2
@@ -74,8 +75,7 @@ if __name__ == '__main__':
 
     # TODO
     model = make_model(cfg, num_class=num_classes, camera_num=num_camera, view_num=0)
-
-# Unfreeze the final few layers of the network for tuning
+#ADDED START--------------------------------------------------------------------------
     for name, param in model.named_parameters():
         lname = name.lower()
         if("prompt" in lname or "adapter" in lname or "dat" in lname or "pbp" in lname or "qtw" in lname or "vcah" in lname):
@@ -86,12 +86,42 @@ if __name__ == '__main__':
             param.requires_grad = True
         else:
             param.requires_grad = False
+#ADDED END--------------------------------------------------------------------------
 
     loss_func, center_criterion = make_loss(cfg, num_classes=num_classes)
 
-    optimizer_1stage = make_optimizer_1stage(cfg, model)
-    scheduler_1stage = create_scheduler(optimizer_1stage, num_epochs = cfg.SOLVER.STAGE1.MAX_EPOCHS, lr_min = cfg.SOLVER.STAGE1.LR_MIN, \
-                        warmup_lr_init = cfg.SOLVER.STAGE1.WARMUP_LR_INIT, warmup_t = cfg.SOLVER.STAGE1.WARMUP_EPOCHS, noise_range = None)
+    # optimizer_1stage = make_optimizer_1stage(cfg, model)  # CHANGED
+    # scheduler_1stage = CosineAnnealingLR(optimizer_1stage, T_max=cfg.SOLVER.STAGE1.MAX_EPOCHS, eta_min=cfg.SOLVER.STAGE1.LR_MIN)  # CHANGED
+
+    base_lr_s1 = cfg.SOLVER.STAGE1.BASE_LR      # CHANGED
+    backbone_lr_s1 = base_lr_s1 * 0.1           # CHANGED
+
+    backbone_params_s1 = []                     # CHANGED
+    other_params_s1 = []                        # CHANGED
+
+    for name, p in model.named_parameters():    # CHANGED
+        if not p.requires_grad:                 # CHANGED
+            continue                            # CHANGED
+        lname = name.lower()                    # CHANGED
+        if ("image_encoder" in lname and        # CHANGED
+            ("resblocks.10" in lname or "resblocks.11" in lname)):  # CHANGED
+            backbone_params_s1.append(p)        # CHANGED
+        else:                                   # CHANGED
+            other_params_s1.append(p)           # CHANGED
+
+    optimizer_1stage = torch.optim.Adam(        # CHANGED
+        [                                      # CHANGED
+            {"params": backbone_params_s1, "lr": backbone_lr_s1},  # CHANGED
+            {"params": other_params_s1, "lr": base_lr_s1},        # CHANGED
+        ],                                      # CHANGED
+        weight_decay=cfg.SOLVER.STAGE1.WEIGHT_DECAY  # CHANGED
+    )                                           # CHANGED
+
+    scheduler_1stage = CosineAnnealingLR(       # CHANGED
+        optimizer_1stage,                       # CHANGED
+        T_max=cfg.SOLVER.STAGE1.MAX_EPOCHS,     # CHANGED
+        eta_min=cfg.SOLVER.STAGE1.LR_MIN        # CHANGED
+    )                                           # CHANGED
 
     if cfg.stage1weight != "":
         logger.info("skip stage one")
@@ -108,8 +138,7 @@ if __name__ == '__main__':
         )
 
     optimizer_2stage, optimizer_center_2stage = make_optimizer_2stage_dat_and_prompt(cfg, model, center_criterion)
-    scheduler_2stage = WarmupMultiStepLR(optimizer_2stage, cfg.SOLVER.STAGE2.STEPS, cfg.SOLVER.STAGE2.GAMMA, cfg.SOLVER.STAGE2.WARMUP_FACTOR,
-                                  cfg.SOLVER.STAGE2.WARMUP_ITERS, cfg.SOLVER.STAGE2.WARMUP_METHOD)
+    scheduler_2stage = CosineAnnealingLR(optimizer_2stage, T_max = cfg.SOLVER.STAGE2.MAX_EPOCHS, eta_min=cfg.SOLVER.STAGE1.LR_MIN)
 
     do_train_stage2(
         cfg,

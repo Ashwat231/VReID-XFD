@@ -3,8 +3,8 @@ MODEL:
   METRIC_LOSS_TYPE: 'triplet'
   IF_LABELSMOOTH: 'on'
   IF_WITH_CENTER: 'no'
-  NAME: 'ViT-B-16'
-  STRIDE_SIZE: [16, 16]
+  NAME: 'ViT-B-16'#--------------------------NAME: 'ViT-L-16' 
+  STRIDE_SIZE: [16, 16] #----------------------STRIDE_SIZE: [14, 14]
   ID_LOSS_WEIGHT: 0.25      # ID Loss
   TRIPLET_LOSS_WEIGHT: 1.0  # Triplet Loss
   I2T_LOSS_WEIGHT: 1.0      # i2t_ce_loss
@@ -70,7 +70,7 @@ SOLVER:
     WEIGHT_DECAY: 0.00025
     WEIGHT_DECAY_BIAS: 0.0001
     LARGE_FC_LR: False
-    MAX_EPOCHS: 40
+    MAX_EPOCHS: 20 #-----------------------------------------------------------
     CHECKPOINT_PERIOD: 5
     LOG_PERIOD: 50
     EVAL_PERIOD: 1

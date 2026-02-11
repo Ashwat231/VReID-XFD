@@ -5,51 +5,51 @@ import torch.nn as nn
 from utils.meter import AverageMeter
 from torch.cuda import amp
 import torch.distributed as dist
-import collections
 from torch.nn import functional as F
 from loss.supcontrast import SupConLoss
 import einops
-from datetime import timedelta
+from datetime import timedelta  # ✅ added import
+
 
 def do_train_stage1(cfg,
-             model,
-             train_loader_stage1,
-             optimizer,
-             scheduler,
-             local_rank):
+                    model,
+                    train_loader_stage1,
+                    optimizer,
+                    scheduler,
+                    local_rank):
     checkpoint_period = cfg.SOLVER.STAGE1.CHECKPOINT_PERIOD
     device = "cuda"
     epochs = cfg.SOLVER.STAGE1.MAX_EPOCHS
-    log_period = cfg.SOLVER.STAGE1.LOG_PERIOD 
+    log_period = cfg.SOLVER.STAGE1.LOG_PERIOD
 
     logger = logging.getLogger("transreid.train")
-    logger.info('start training')
-    _LOCAL_PROCESS_GROUP = None
+    logger.info('Start Stage 1 training')
+
     if device:
         model.to(local_rank)
         if torch.cuda.device_count() > 1:
             print('Using {} GPUs for training'.format(torch.cuda.device_count()))
-            model = nn.DataParallel(model)  
+            model = nn.DataParallel(model)
 
     loss_meter = AverageMeter()
     scaler = amp.GradScaler()
     xent = SupConLoss(device)
-    
-    # train
+
+    # ===== Prepare features =====
     import time
     all_start_time = time.monotonic()
-    logger.info("model: {}".format(model))
+    logger.info("Model: {}".format(model))
     image_features = []
     labels = []
 
     with torch.no_grad():
         for n_iter, batch_data in enumerate(train_loader_stage1):
-            # Support original (vids, pids, camid) and extended 8-tuple format
+            # Support both (vids, pids, camid) and extended 8-tuple format
             if len(batch_data) == 3:
                 vids, pids, camid = batch_data
             else:
                 vids, pids, camid = batch_data[0], batch_data[1], batch_data[2]
-            
+
             print(n_iter)
             vids = vids.to(device)
             target = pids.to(device)
@@ -66,9 +66,9 @@ def do_train_stage1(cfg,
         i_ter = num_image // batch
     del labels, image_features
 
+    # ===== Training loop =====
     for epoch in range(1, epochs + 1):
         loss_meter.reset()
-        scheduler.step(epoch)
         model.train()
 
         iter_list = torch.randperm(num_image).to(device)
@@ -76,15 +76,15 @@ def do_train_stage1(cfg,
         for i in range(i_ter):
             optimizer.zero_grad()
             if i != i_ter:
-                b_list = iter_list[i*batch:(i+1)* batch]
+                b_list = iter_list[i * batch:(i + 1) * batch]
             else:
-                b_list = iter_list[i*batch:num_image]
-            
+                b_list = iter_list[i * batch:num_image]
+
             target = labels_list[b_list]
             image_features = image_features_list[b_list]
 
             with amp.autocast(enabled=True):
-                text_features = model(label = target, get_text = True)
+                text_features = model(label=target, get_text=True)
                 loss_i2t = xent(image_features, text_features, target, target)
                 loss_t2i = xent(text_features, image_features, target, target)
                 loss = loss_i2t + loss_t2i
@@ -103,11 +103,14 @@ def do_train_stage1(cfg,
                         (i + 1),
                         len(train_loader_stage1),
                         loss_meter.avg,
-                        scheduler.get_last_lr()[0]
+                        scheduler.get_last_lr()[0]  # ✅ fixed for Cosine LR
                     )
                 )
+
+        # Step scheduler once per epoch ✅ (fixes warning)
         scheduler.step()
 
+        # ===== Save checkpoint =====
         if epoch % checkpoint_period == 0:
             save_path = os.path.join(
                 cfg.OUTPUT_DIR,
@@ -119,6 +122,7 @@ def do_train_stage1(cfg,
             else:
                 torch.save(model.state_dict(), save_path)
 
+    # ===== End of training =====
     all_end_time = time.monotonic()
     total_time = timedelta(seconds=all_end_time - all_start_time)
-    logger.info("Stage1 running time: {}".format(total_time))
+    logger.info("Stage 1 total running time: {}".format(total_time))

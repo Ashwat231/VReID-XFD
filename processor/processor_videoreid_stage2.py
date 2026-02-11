@@ -10,7 +10,7 @@ import torch.distributed as dist
 from torch.nn import functional as F
 from loss.supcontrast import SupConLoss
 import einops
-from datetime import timedelta
+from datetime import timedelta  # ✅ Added missing import
 
 from utils.test_video_reid import test, _eval_format_logger
 
@@ -163,12 +163,12 @@ def do_train_stage2(
                         len(train_loader_stage2),
                         loss_meter.avg,
                         acc_meter.avg,
-                        scheduler.get_last_lr()[0]
+                        scheduler.get_last_lr()[0]  # ✅ Fixed for Cosine LR
                     )
                 )
 
         # ====== End of epoch ======
-        scheduler.step()
+        scheduler.step()  # ✅ Step scheduler once per epoch
 
         end_time = time.time()
         time_per_batch = (end_time - start_time) / (n_iter + 1)

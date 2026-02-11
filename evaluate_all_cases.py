@@ -16,6 +16,7 @@ import time
 from datetime import timedelta
 import csv
 
+
 # Add current directory to path
 sys.path.append('.')
 
@@ -62,7 +63,6 @@ def _average_precision(y_true_set, y_pred_list):
             hits += 1
             ap += hits / (rank_idx + 1)
     return ap / len(y_true_set)
-
 
 def evaluate_case(cfg, model, case_name, case_subset, use_gpu=True):
     """
@@ -197,10 +197,17 @@ def evaluate_case(cfg, model, case_name, case_subset, use_gpu=True):
     print("Reordering features to match sorted tracklet order...")
     qf_sorted = qf[query_sorted_indices]
     gf_sorted = gf[gallery_sorted_indices]
+
     
     # Compute distance matrix with sorted features
     distmat = _cal_dist(qf=qf_sorted, gf=gf_sorted, distance=cfg.TEST.DISTANCE)
     
+#ADDED------------------------------------------------------------------------------------------------------------------------------------------------------    
+    if cfg.TEST.RE_RANKING:
+        from utils.reranking import re_ranking as kreciprocal_rerank
+        dist_np = kreciprocal_rerank(qf_sorted, gf_sorted, k1=22, k2=6, lambda_value=0.35)
+        distmat = torch.from_numpy(dist_np)
+#------------------------------------------------------------------------------------------------------------------------------------------------------
     # Get ranking indices for each query (argsort gives indices from smallest to largest distance)
     ranking_indices = torch.argsort(distmat, dim=1).numpy()  # shape: (num_queries, num_galleries)
 
@@ -368,7 +375,7 @@ def main():
     )
     parser.add_argument(
         "--cases",
-        default="1,2,3",
+        default="1,2,3",  
         help="which cases to evaluate (e.g., '1,2,3' or '1,3')",
         type=str
     )

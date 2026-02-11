@@ -15,6 +15,8 @@ import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
+from utils.reranking import re_ranking as kreciprocal_rerank #ADDED------------------------------------------------------------------------------------------------
+
 
 
 def print_time(string=''):
@@ -22,11 +24,31 @@ def print_time(string=''):
     res = ctime + ' | ' + string
     print(res)
 
+""" #REMOVE COMMENT START---------------------------------------------------------------------
 def extract_feat_sampled_frames(model, vids, cam, use_gpu=True):
     if use_gpu:
         vids = vids.cuda()
         cam = cam.cuda()
 
+    # Original
+    f1 = model(vids, cam_label=cam)
+
+    # Horizontally flipped
+    vids_flip = torch.flip(vids, dims=[4])  # flip width dimension (W)
+    f2 = model(vids_flip, cam_label=cam)
+
+    # Average
+    f = (f1 + f2) / 2.0
+    return f.data.cpu()
+""" #REMOVE COMMENT ABOVE IS THE ORIGINAL REPLACED WITH BELOW-------------------------------
+
+#ADDED--------------------------------------------------------------------------------------
+def extract_feat_sampled_frames(model, vids, cam, use_gpu=True):
+    if use_gpu:
+        vids = vids.cuda()
+        cam = cam.cuda()
+
+    # Original
     f1 = model(vids, cam_label=cam)   # (b, t, c)
 
     # Horizontal flip (same H, W → same #patches → same #tokens)
@@ -36,6 +58,10 @@ def extract_feat_sampled_frames(model, vids, cam, use_gpu=True):
     # Average both
     f = (f1 + f2) / 2.0
     return f.data.cpu()
+
+
+#ADDED END------------------------------------------------------------------------------------
+
 
 def extract_feat_all_frames(model, vids, max_clip_per_batch=45, use_gpu=True):
     """
@@ -171,48 +197,6 @@ def evaluate(distmat, q_pids, g_pids, q_camids, g_camids):
 
     return CMC, mAP
 
-def re_ranking(qf, gf, k1=20, k2=6, lambda_value=0.3):
-    """
-    qf: query features (num_query, dim)
-    gf: gallery features (num_gallery, dim)
-    Implements k-reciprocal re-ranking from Zhong et al., CVPR 2017.
-    """
-    original_dist = torch.cdist(qf, gf, p=2).cpu().numpy()
-    all_num = original_dist.shape[0] + original_dist.shape[1]
-    feat = np.concatenate([qf.cpu().numpy(), gf.cpu().numpy()], axis=0)
-
-    # Compute distance
-    dist = torch.cdist(torch.tensor(feat), torch.tensor(feat), p=2).cpu().numpy()
-
-    # k-reciprocal encoding
-    gallery_num = gf.size(0)
-    V = np.zeros_like(dist).astype(np.float32)
-
-    for i in range(all_num):
-        forward_k_neigh_index = np.argsort(dist[i])[:k1+1]
-        backward_k_neigh_index = np.argsort(dist[forward_k_neigh_index], axis=1)[:, :k1+1]
-        fi = np.where(backward_k_neigh_index == i)[0]
-        k_reciprocal_neigh = forward_k_neigh_index[fi]
-        V[i, k_reciprocal_neigh] = 1.0
-
-    # Jaccard distance
-    invIndex = []
-    for i in range(all_num):
-        invIndex.append(np.where(V[:, i] == 1)[0])
-
-    jaccard_dist = np.zeros((qf.size(0), gf.size(0)), dtype=np.float32)
-    for i in range(qf.size(0)):
-        temp_min = np.zeros((1, all_num), dtype=np.float32)
-        indNonZero = np.where(V[i] != 0)[0]
-        for j in indNonZero:
-            temp_min[0, invIndex[j]] += np.minimum(V[i, j], V[invIndex[j], j])
-        jaccard_dist[i] = 1 - temp_min[0, qf.size(0):] / (2 - temp_min[0, qf.size(0):])
-
-    # Final distance
-    final_dist = (1 - lambda_value) * original_dist + lambda_value * jaccard_dist
-
-    return torch.tensor(final_dist)
-
 def test(model, queryloader, galleryloader, use_gpu, cfg, ranks=None):
     if ranks is None:
         ranks = [1, 5, 10, 20]
@@ -259,11 +243,12 @@ def test(model, queryloader, galleryloader, use_gpu, cfg, ranks=None):
     # torch.save(gf, 'gf.pt')
     # assert 1 < 0
     distmat = _cal_dist(qf=qf, gf=gf, distance=cfg.TEST.DISTANCE)
-    
+#ADDED-------------------------------------------------------------------
     if cfg.TEST.RE_RANKING:
-        print_time("APPLYING RERANKING")
-        distmat = re_ranking(qf, gf, k1=22, k2=6, lambda_value=0.35)
-
+        print_time("APPLYING K-RECIPROCAL RE-RANKING")
+        dist_np = kreciprocal_rerank(qf, gf, k1=22, k2=6, lambda_value=0.35)
+        distmat = torch.from_numpy(dist_np)
+#ADDED END-------------------------------------------------------------------
     print_time("Computing CMC and mAP")
     print(q_pids)
     print(distmat)
