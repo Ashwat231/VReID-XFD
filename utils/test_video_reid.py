@@ -246,7 +246,7 @@ def test(model, queryloader, galleryloader, use_gpu, cfg, ranks=None):
 #ADDED-------------------------------------------------------------------
     if cfg.TEST.RE_RANKING:
         print_time("APPLYING K-RECIPROCAL RE-RANKING")
-        dist_np = kreciprocal_rerank(qf, gf, k1=22, k2=6, lambda_value=0.30)
+        dist_np = kreciprocal_rerank(qf, gf, k1=28, k2=6, lambda_value=0.28)
         distmat = torch.from_numpy(dist_np)
 #ADDED END-------------------------------------------------------------------
     print_time("Computing CMC and mAP")

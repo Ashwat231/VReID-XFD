@@ -205,7 +205,7 @@ def evaluate_case(cfg, model, case_name, case_subset, use_gpu=True):
 #ADDED------------------------------------------------------------------------------------------------------------------------------------------------------    
     if cfg.TEST.RE_RANKING:
         from utils.reranking import re_ranking as kreciprocal_rerank
-        dist_np = kreciprocal_rerank(qf_sorted, gf_sorted, k1=22, k2=6, lambda_value=0.30)
+        dist_np = kreciprocal_rerank(qf_sorted, gf_sorted, k1=28, k2=6, lambda_value=0.28)
         distmat = torch.from_numpy(dist_np)
 #------------------------------------------------------------------------------------------------------------------------------------------------------
     # Get ranking indices for each query (argsort gives indices from smallest to largest distance)

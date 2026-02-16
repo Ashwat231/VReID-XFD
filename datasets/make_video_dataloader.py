@@ -59,7 +59,7 @@ def make_dataloader(cfg):
             spatial_transform=spatial_transform_train_stage2,
             temporal_transform=temporal_transform_train
         ),
-        sampler=CrossViewIdentitySampler(  # <<< CHANGED
+        sampler=RandomIdentitySampler_Video(  # <<< CHANGED
             dataset.train,
             num_instances=cfg.DATALOADER.NUM_INSTANCE
         ),
@@ -78,7 +78,7 @@ def make_dataloader(cfg):
             spatial_transform=spatial_transform_train_stage2,
             temporal_transform=temporal_transform_train
         ),
-        sampler=CrossViewIdentitySampler(  # <<< CHANGED
+        sampler=RandomIdentitySampler_Video(  # <<< CHANGED
             dataset.train,
             num_instances=cfg.DATALOADER.NUM_INSTANCE
         ),

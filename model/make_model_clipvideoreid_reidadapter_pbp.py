@@ -9,6 +9,21 @@ _tokenizer = _Tokenizer()
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import einops
 
+#ADDEDD------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Temporal attention model
+class TemporalAttention(nn.Module):
+    def __init__(self, dim):
+        super(TemporalAttention, self).__init__()
+        self.fc = nn.Linear(dim, 1)
+
+    def forward(self, x):
+        # x: (B, T, C)
+        weights = self.fc(x)             # (B, T, 1)
+        weights = torch.softmax(weights, dim=1)
+        out = (x * weights).sum(dim=1)   # (B, C)
+        return out
+#ADDED END------------------------------------------------------------------------------------------------------------------------------------------------
+
 def weights_init_kaiming(m):
     classname = m.__class__.__name__
     if classname.find('Linear') != -1:
@@ -87,6 +102,10 @@ class build_transformer(nn.Module):
         self.bottleneck_proj = nn.BatchNorm1d(self.in_planes_proj)
         self.bottleneck_proj.bias.requires_grad_(False)
         self.bottleneck_proj.apply(weights_init_kaiming)
+        
+        self.temporal_attn = TemporalAttention(self.in_planes) #ADDED----------------------------------------------------------------------------------------------------------------
+        self.temporal_attn_proj = TemporalAttention(self.in_planes_proj) #ADDED------------------------------------------------------------------------------------------------------
+
 
         self.h_resolution = int((cfg.INPUT.SIZE_TRAIN[0]-16)//cfg.MODEL.STRIDE_SIZE[0] + 1)
         self.w_resolution = int((cfg.INPUT.SIZE_TRAIN[1]-16)//cfg.MODEL.STRIDE_SIZE[1] + 1)
@@ -155,11 +174,11 @@ class build_transformer(nn.Module):
             img_feature_proj = image_features_proj[:, 0]
 
         img_feature_last = einops.rearrange(img_feature_last, '(b t) d -> b t d', b=batch)
-        img_feature_last = torch.mean(img_feature_last, dim=1)
+        img_feature_last = self.temporal_attn(img_feature_last) #ADDED---------------------------------------------------------------------------------------------------
         img_feature = einops.rearrange(img_feature, '(b t) d -> b t d', b=batch)
-        img_feature = torch.mean(img_feature, dim=1)
+        img_feature = self.temporal_attn(img_feature) #ADDED---------------------------------------------------------------------------------------------------
         img_feature_proj = einops.rearrange(img_feature_proj, '(b t) d -> b t d', b=batch)
-        img_feature_proj = torch.mean(img_feature_proj, dim=1)
+        img_feature_proj = self.temporal_attn_proj(img_feature_proj) #ADDED---------------------------------------------------------------------------------------------------
 
         if self.training:
             feat = self.bottleneck(img_feature)
